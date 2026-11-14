@@ -1,6 +1,6 @@
 # 🏥 HealthCare AI - End-to-End Clinical Chatbot
 
-An end-to-end clinical health information assistant built with **Streamlit**, **Google Gemini (`google-genai` SDK)**, **TF-IDF RAG**, **DuckDuckGo Medical Search Tool**, **Conversational Memory**, and **Automated 10-Question Clinical Safety Evaluation**.
+An end-to-end clinical health information assistant built with **Streamlit**, **Groq Cloud (LLaMA 3.3 / 3.1)**, **Google Gemini**, **TF-IDF RAG**, **DuckDuckGo Medical Search Tool**, **Conversational Memory**, and **Automated 10-Question Clinical Safety Evaluation**.
 
 ---
 
@@ -10,24 +10,28 @@ An end-to-end clinical health information assistant built with **Streamlit**, **
    - Evidence-based clinical guidance covering common acute and chronic complaints.
    - Built-in medical safety directives: never provides unverified diagnoses, never prescribes medications, and strictly refers patients to licensed physicians.
 
-2. **RAG (Retrieval-Augmented Generation)**:
+2. **Ultra-Fast LLM Inference**:
+   - Native support for **Groq Cloud** (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `mixtral-8x7b-32768`) providing lightning-fast inference (~500–800 tokens/sec).
+   - Also supports **Google Gemini** (`gemini-2.5-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`).
+
+3. **RAG (Retrieval-Augmented Generation)**:
    - Vectorized clinical knowledge base using **TF-IDF with unigrams & bi-grams** and **Cosine Similarity Ranking**.
    - Handles colloquial terms and typos (e.g., `"coldstomachache"`, `"diabetis"`).
    - Retrieves top matching evidence and injects it into the LLM system prompt.
 
-3. **External Tool Integration (DuckDuckGo Medical Search)**:
+4. **External Tool Integration (DuckDuckGo Medical Search)**:
    - Live query formulation restricted to verified, trusted medical portals (`nhs.uk`, `medlineplus.gov`, `cdc.gov`).
    - Resilient architecture with automated fallbacks to ensure uninterrupted uptime.
 
-4. **Conversational Memory**:
+5. **Conversational Memory**:
    - Multi-turn sliding window memory maintaining context across user follow-up questions.
    - Visualized in modern Streamlit chat UI components (`st.chat_message`).
 
-5. **Token Logging & Performance Analytics**:
+6. **Token Logging & Performance Analytics**:
    - Real-time logging of **Prompt Tokens**, **Candidate/Completion Tokens**, **Total Tokens**, **Response Latency (sec)**, and **Estimated Cost ($)**.
    - Interactive charts and instant CSV export for auditing.
 
-6. **10-Question Clinical Evaluation Suite**:
+7. **10-Question Clinical Evaluation Suite**:
    - Automated benchmark testing across the 10 mandatory evaluation questions.
    - Validates **Doctor Referral Compliance** and **Emergency Escalation** (especially critical for chest pain).
    - Scorecard with token consumption, latency, and full response viewer.
@@ -67,9 +71,11 @@ pip install -r requirements.txt
 ```
 
 ### 3. Set Up API Key
-Create `.streamlit/secrets.toml`:
+In `.streamlit/secrets.toml`:
 ```toml
-GEMINI_API_KEY = "AIzaSy..."
+GROQ_API_KEY = "gsk_..."
+# Or if using Gemini:
+# GEMINI_API_KEY = "AIzaSy..."
 ```
 *(Alternatively, enter your API key directly in the sidebar inside the app).*
 
@@ -102,11 +108,11 @@ git push -u origin main
 4. Branch: `main`.
 5. Main file path: `app.py`.
 
-### Step 3: Configure Secrets (Gemini API Key)
+### Step 3: Configure Secrets on Streamlit Cloud
 1. In the deployment setup screen, click **"Advanced settings..."** (or go to App Settings > Secrets after creating).
 2. Under **Secrets**, paste:
    ```toml
-   GEMINI_API_KEY = "your_actual_gemini_api_key_here"
+   GROQ_API_KEY = "gsk_..."
    ```
 3. Click **"Save"** and then **"Deploy!"**.
 
