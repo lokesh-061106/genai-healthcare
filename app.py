@@ -1,7 +1,6 @@
 """
 HealthCare AI - End-to-End Medical Information Chatbot with RAG, Memory, Live Search & Evaluation
-Author: HealthCare AI Team
-Framework: Streamlit, Google GenAI SDK, DuckDuckGo Search, Scikit-learn
+Supports: Groq Cloud (Ultra-Fast LLaMA 3.3 / 3.1) & Google Gemini
 """
 
 import os
@@ -30,7 +29,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom Healthcare Blue/Teal CSS styling
 st.markdown("""
 <style>
     .main-header {
@@ -42,17 +40,6 @@ st.markdown("""
         font-weight: 700;
         margin-bottom: 0.2rem;
     }
-    .badge-pill {
-        display: inline-block;
-        padding: 0.25rem 0.6rem;
-        border-radius: 999px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-right: 0.5rem;
-    }
-    .badge-blue { background-color: #e0f2fe; color: #0369a1; }
-    .badge-green { background-color: #dcfce7; color: #15803d; }
-    .badge-amber { background-color: #fef3c7; color: #b45309; }
     .disclaimer-box {
         background-color: #eff6ff;
         border-left: 4px solid #2563eb;
@@ -60,15 +47,6 @@ st.markdown("""
         border-radius: 4px;
         font-size: 0.85rem;
         color: #1e3a8a;
-        margin-bottom: 1rem;
-    }
-    .emergency-banner {
-        background-color: #fef2f2;
-        border-left: 4px solid #dc2626;
-        padding: 0.75rem 1rem;
-        border-radius: 4px;
-        font-size: 0.85rem;
-        color: #991b1b;
         margin-bottom: 1rem;
     }
 </style>
@@ -84,13 +62,24 @@ if "history" not in st.session_state:
     st.session_state.history = []  # List of tuples: (role, text)
 
 if "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = []  # Detailed chat objects
+    st.session_state.chat_messages = []
 
 if "logs" not in st.session_state:
-    st.session_state.logs = []  # Token logging list of dicts
+    st.session_state.logs = []
 
 if "benchmark_df" not in st.session_state:
     st.session_state.benchmark_df = None
+
+# ---------------------------------------------------------
+# Helper to read secrets safely
+# ---------------------------------------------------------
+def get_secret(key_name: str, default: str = "") -> str:
+    try:
+        if key_name in st.secrets:
+            return st.secrets[key_name]
+    except Exception:
+        pass
+    return os.environ.get(key_name, default)
 
 # ---------------------------------------------------------
 # Sidebar Configuration & Credentials
@@ -98,45 +87,68 @@ if "benchmark_df" not in st.session_state:
 with st.sidebar:
     st.markdown("### ⚙️ System Configuration")
     
-    # Retrieve API key from secrets, env, or sidebar input
-    secrets_key = ""
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            secrets_key = st.secrets["GEMINI_API_KEY"]
-    except Exception:
-        pass
+    # Provider Selection
+    saved_groq_key = get_secret("GROQ_API_KEY", "")
+    saved_gemini_key = get_secret("GEMINI_API_KEY", "")
     
-    if not secrets_key:
-        secrets_key = os.environ.get("GEMINI_API_KEY", "")
-
-    api_key_input = st.text_input(
-        "Gemini API Key",
-        value=secrets_key,
-        type="password",
-        help="Get a free Gemini API key from Google AI Studio (aistudio.google.com)"
+    default_provider_idx = 0 if saved_groq_key else (1 if saved_gemini_key else 0)
+    provider = st.selectbox(
+        "LLM Provider",
+        options=["Groq Cloud (Fast LLaMA 3.3)", "Google Gemini"],
+        index=default_provider_idx
     )
 
-    model_option = st.selectbox(
-        "Gemini Model",
-        options=["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
-        index=0
+    if provider.startswith("Groq"):
+        api_key_input = st.text_input(
+            "Groq API Key",
+            value=saved_groq_key,
+            type="password",
+            help="Get your free high-speed API key at https://console.groq.com/keys"
+        )
+        model_options = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it"
+        ]
+        model_name = st.selectbox("Groq Model", model_options, index=0)
+    else:
+        api_key_input = st.text_input(
+            "Gemini API Key",
+            value=saved_gemini_key,
+            type="password",
+            help="Get your free Gemini API key at https://aistudio.google.com/"
+        )
+        model_options = [
+            "gemini-2.5-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro"
+        ]
+        model_name = st.selectbox("Gemini Model", model_options, index=0)
+
+    temperature = st.slider(
+        "Temperature",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.2,
+        step=0.05,
+        help="Lower temperature ensures strictly factual, medically conservative responses."
     )
 
-    temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.2, step=0.05,
-                            help="Lower temperature ensures strictly factual, medically conservative responses.")
-
-    enable_web_search = st.toggle("Enable External Web Search Tool", value=True,
-                                  help="Enables DuckDuckGo live queries to trusted medical portals (NHS, MedlinePlus, CDC).")
+    enable_web_search = st.toggle(
+        "Enable External Web Search Tool",
+        value=True,
+        help="Enables DuckDuckGo live queries to trusted medical portals (NHS, MedlinePlus, CDC)."
+    )
 
     st.markdown("---")
     st.markdown("### 🧠 Architecture Specs")
-    st.markdown("""
-    - **Domain**: Healthcare & Clinical Triage
-    - **LLM**: Google Gemini (`google-genai` SDK)
-    - **RAG**: TF-IDF & Cosine Similarity
+    st.markdown(f"""
+    - **Active Engine**: `{provider}`
+    - **Active Model**: `{model_name}`
+    - **RAG Retriever**: TF-IDF & Cosine Similarity
     - **External Tool**: DuckDuckGo Medical Search
-    - **Memory**: Rolling Multi-Turn Context Window
-    - **Logging**: Per-Query Tokens & Latency
+    - **Memory**: Rolling Context Window
     """)
 
     st.markdown("---")
@@ -148,31 +160,96 @@ with st.sidebar:
         st.rerun()
 
 # ---------------------------------------------------------
-# Google GenAI Client Initializer
+# LLM Client Factory (Groq & Gemini)
 # ---------------------------------------------------------
-def get_genai_client(api_key: str):
-    if not api_key:
-        return None
-    try:
-        from google import genai
-        return genai.Client(api_key=api_key)
-    except Exception as e:
-        st.sidebar.error(f"Failed to initialize GenAI client: {e}")
+def create_llm_caller(provider_choice: str, key: str, chosen_model: str, temp: float):
+    if not key:
         return None
 
-client = get_genai_client(api_key_input)
+    if provider_choice.startswith("Groq"):
+        # Try importing official groq SDK, fallback to openai SDK with Groq base URL
+        try:
+            from groq import Groq
+            client = Groq(api_key=key)
+            
+            def call_groq(system_prompt: str, user_prompt: str):
+                completion = client.chat.completions.create(
+                    model=chosen_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=temp,
+                    max_tokens=650
+                )
+                text = completion.choices[0].message.content
+                u = completion.usage
+                in_tok = getattr(u, "prompt_tokens", 0) or 0
+                out_tok = getattr(u, "completion_tokens", 0) or 0
+                return text, in_tok, out_tok
+
+            return call_groq
+        except Exception:
+            try:
+                from openai import OpenAI
+                client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=key)
+
+                def call_groq_openai(system_prompt: str, user_prompt: str):
+                    completion = client.chat.completions.create(
+                        model=chosen_model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        temperature=temp,
+                        max_tokens=650
+                    )
+                    text = completion.choices[0].message.content
+                    u = completion.usage
+                    in_tok = getattr(u, "prompt_tokens", 0) or 0
+                    out_tok = getattr(u, "completion_tokens", 0) or 0
+                    return text, in_tok, out_tok
+
+                return call_groq_openai
+            except Exception as e:
+                st.sidebar.error(f"Groq Client Init Error: {e}")
+                return None
+    else:
+        # Google Gemini
+        try:
+            from google import genai
+            client = genai.Client(api_key=key)
+
+            def call_gemini(system_prompt: str, user_prompt: str):
+                full_contents = f"{system_prompt}\n\nPATIENT QUERY:\n{user_prompt}"
+                response = client.models.generate_content(
+                    model=chosen_model,
+                    contents=full_contents,
+                    config={"temperature": temp}
+                )
+                text = response.text or ""
+                u = getattr(response, "usage_metadata", None)
+                in_tok = getattr(u, "prompt_token_count", 0) or 0
+                out_tok = getattr(u, "candidates_token_count", 0) or 0
+                return text, in_tok, out_tok
+
+            return call_gemini
+        except Exception as e:
+            st.sidebar.error(f"Gemini Client Init Error: {e}")
+            return None
+
+llm_caller = create_llm_caller(provider, api_key_input, model_name, temperature)
 
 # ---------------------------------------------------------
 # Core Query Execution Engine (RAG + Tool + Memory + LLM)
 # ---------------------------------------------------------
 def ask_ai(question: str) -> dict:
     """
-    Executes an end-to-end question processing pipeline:
-    1. Preprocesses query and retrieves clinical context via RAG.
-    2. Executes external DuckDuckGo medical search tool.
-    3. Bundles rolling conversation memory.
-    4. Formulates a clinically safe prompt for Gemini.
-    5. Measures latency, extracts token counts, and logs performance.
+    Executes the clinical query pipeline:
+    1. RAG retrieval via TF-IDF & Cosine Similarity.
+    2. DuckDuckGo external medical search tool.
+    3. Conversational memory injection.
+    4. Call LLM (Groq / Gemini) and record tokens, latency, cost.
     """
     rag_engine: HealthcareRAG = st.session_state.rag_engine
     
@@ -209,9 +286,6 @@ VERIFIED WEB INFORMATION (External Search Tool):
 
 CONVERSATION MEMORY:
 {memory_formatted}
-
-PATIENT QUESTION:
-{question}
 """
 
     start_time = time.time()
@@ -219,35 +293,20 @@ PATIENT QUESTION:
     inp_tokens = 0
     out_tokens = 0
 
-    if client:
+    if llm_caller:
         try:
-            response = client.models.generate_content(
-                model=model_option,
-                contents=system_prompt,
-                config={"temperature": temperature}
-            )
-            response_text = response.text or "No response text generated."
-            
-            # Extract token usage metadata from Gemini SDK
-            usage = getattr(response, "usage_metadata", None)
-            if usage:
-                inp_tokens = getattr(usage, "prompt_token_count", 0) or 0
-                out_tokens = getattr(usage, "candidates_token_count", 0) or 0
-            else:
-                # Fallback estimation if metadata missing
-                inp_tokens = int(len(system_prompt.split()) * 1.3)
-                out_tokens = int(len(response_text.split()) * 1.3)
+            response_text, inp_tokens, out_tokens = llm_caller(system_prompt, question)
         except Exception as e:
-            response_text = f"⚠️ Gemini API Error: {str(e)}\nPlease check your API key and quota."
+            response_text = f"⚠️ LLM API Error: {str(e)}\nPlease check your API key and connection."
             inp_tokens = len(system_prompt.split())
             out_tokens = 20
     else:
         # Fallback simulation if no API key provided yet
         response_text = (
-            f"**[Demo Mode - API Key Not Set]**\n\n"
-            f"Based on our clinical knowledge for **{rag_title}**:\n\n"
+            f"**[Demo Mode - API Key Not Configured]**\n\n"
+            f"Based on clinical knowledge for **{rag_title}**:\n\n"
             f"• **Guidance**: {rag_context}\n\n"
-            f"• **Web Insights**: {web_context[:200]}...\n\n"
+            f"• **Web Search**: {web_context[:180]}...\n\n"
             f"⚠️ **Disclaimer**: Please consult a licensed physician. If experiencing severe symptoms or chest pain, seek immediate emergency care."
         )
         inp_tokens = len(system_prompt.split())
@@ -256,14 +315,20 @@ PATIENT QUESTION:
     elapsed_time = round(time.time() - start_time, 2)
     total_tokens = inp_tokens + out_tokens
 
-    # Approximate cost estimation (Gemini 2.5 Flash / 1.5 Flash: ~$0.075 / 1M input, $0.30 / 1M output)
-    estimated_cost = round((inp_tokens * 0.000000075) + (out_tokens * 0.00000030), 6)
+    # Approximate Cost calculation:
+    # Groq LLaMA 3.3 70B: ~$0.59 / 1M prompt, $0.79 / 1M completion
+    # LLaMA 3.1 8B / Gemini Flash: ~$0.075 / 1M prompt, $0.30 / 1M completion
+    rate_in = 0.00000059 if "70b" in model_name.lower() else 0.000000075
+    rate_out = 0.00000079 if "70b" in model_name.lower() else 0.00000030
+    estimated_cost = round((inp_tokens * rate_in) + (out_tokens * rate_out), 6)
 
     # 5. Update Memory & Session State
     st.session_state.history.extend([("Patient", question), ("HealthCare AI", response_text)])
 
     log_entry = {
         "Timestamp": time.strftime("%H:%M:%S"),
+        "Engine": provider.split()[0],
+        "Model": model_name,
         "Question": question,
         "RAG Document": rag_title,
         "RAG Similarity": round(rag_score, 3),
@@ -299,7 +364,7 @@ st.markdown("""
 <div class="main-header">
     <h1>🏥 HealthCare AI Assistant</h1>
     <p style="color:#64748b; font-size: 1.05rem;">
-        An End-to-End Clinical Chatbot powered by <strong>Gemini</strong>, <strong>TF-IDF RAG</strong>, 
+        An End-to-End Clinical Chatbot powered by <strong>Groq Cloud / Gemini</strong>, <strong>TF-IDF RAG</strong>, 
         <strong>DuckDuckGo Live Search</strong>, and <strong>Automated Clinical Evaluation</strong>.
     </p>
 </div>
@@ -351,7 +416,7 @@ with tab_chat:
     user_query = st.chat_input("Describe your symptoms (e.g., 'I am suffering from fever and headache')...")
     if user_query:
         if not api_key_input:
-            st.warning("🔑 No Gemini API key detected in sidebar or secrets. Running in simulation mode.")
+            st.warning("🔑 No API key detected. Add your Groq API key in the sidebar or in secrets.toml.")
         
         with st.spinner("Analyzing symptoms via RAG, querying medical web, and formulating clinical response..."):
             ask_ai(user_query)
@@ -424,7 +489,6 @@ with tab_benchmark:
 
         st.markdown("### Detailed 10-Question Scorecard")
         
-        # Filterable and displayable dataframe
         display_cols = [
             "Question", "Target Condition", "RAG Retrieved", "RAG Similarity",
             "Total Tokens", "Latency (sec)", "Doctor Referral", "Emergency Escalation", "Safety Compliance"
@@ -432,7 +496,7 @@ with tab_benchmark:
         present_cols = [c for c in display_cols if c in df_bench.columns]
         st.dataframe(df_bench[present_cols], use_container_width=True)
 
-        # Expandable inspection of full responses for each of the 10 questions
+        # Expandable inspection of full responses
         st.markdown("### 🔍 Inspect Individual Clinical Responses")
         for idx, row in df_bench.iterrows():
             with st.expander(f"Question {idx+1}: {row['Question']} ({row['Safety Compliance']})"):
@@ -474,7 +538,6 @@ with tab_analytics:
 
         st.markdown("---")
         
-        # Performance Charts
         c_chart1, c_chart2 = st.columns(2)
         with c_chart1:
             st.markdown("##### Token Breakdown per Interaction")
@@ -489,7 +552,6 @@ with tab_analytics:
         st.markdown("##### Real-time Transaction Log")
         st.dataframe(log_df, use_container_width=True)
 
-        # Download Logs
         log_csv = log_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Download Session Performance Logs (CSV)",
@@ -510,7 +572,6 @@ with tab_kb:
     and **Cosine Similarity Matching** for low-latency, domain-accurate medical context retrieval.
     """)
 
-    # Interactive RAG tester
     test_search = st.text_input("🔍 Test Knowledge Base Retrieval Engine", value="I have painful chest pressure")
     if test_search:
         results = st.session_state.rag_engine.retrieve(test_search, top_k=3)
