@@ -81,6 +81,26 @@ def get_secret(key_name: str, default: str = "") -> str:
         pass
     return os.environ.get(key_name, default)
 
+@st.cache_data(ttl=600)
+def get_groq_models(key: str):
+    defaults = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam-2-7b"]
+    if not key:
+        return defaults
+    try:
+        from groq import Groq
+        c = Groq(api_key=key)
+        m_list = [
+            m.id for m in c.models.list().data 
+            if not m.id.startswith("whisper") and "guard" not in m.id
+        ]
+        if m_list:
+            preferred = [m for m in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"] if m in m_list]
+            others = [m for m in m_list if m not in preferred]
+            return preferred + others
+    except Exception:
+        pass
+    return defaults
+
 # ---------------------------------------------------------
 # Sidebar Configuration & Credentials
 # ---------------------------------------------------------
@@ -94,7 +114,7 @@ with st.sidebar:
     default_provider_idx = 0 if saved_groq_key else (1 if saved_gemini_key else 0)
     provider = st.selectbox(
         "LLM Provider",
-        options=["Groq Cloud (Fast LLaMA 3.3)", "Google Gemini"],
+        options=["Groq Cloud (High-Speed LLM)", "Google Gemini"],
         index=default_provider_idx
     )
 
@@ -105,12 +125,7 @@ with st.sidebar:
             type="password",
             help="Get your free high-speed API key at https://console.groq.com/keys"
         )
-        model_options = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "mixtral-8x7b-32768",
-            "gemma2-9b-it"
-        ]
+        model_options = get_groq_models(api_key_input)
         model_name = st.selectbox("Groq Model", model_options, index=0)
     else:
         api_key_input = st.text_input(
