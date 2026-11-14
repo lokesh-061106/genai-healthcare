@@ -111,3 +111,4 @@ def query_medical_web(query: str, max_results: int = 2) -> Dict:
         "snippets": results,
         "combined_text": "\n\n".join(results)
     }
+

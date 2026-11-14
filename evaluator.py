@@ -116,3 +116,4 @@ def run_full_benchmark(ask_ai_fn: Callable[[str], Dict], progress_callback=None)
 
     df = pd.DataFrame(records)
     return df
+

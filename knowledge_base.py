@@ -201,3 +201,4 @@ class HealthcareRAG:
             doc, score = top_matches[0]
             return doc["title"], doc["text"], score
         return "General Medical Context", "Consult a certified healthcare provider.", 0.0
+
